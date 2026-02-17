@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# database
+*.db
+
+# uploads
+/public/uploads/
+
+# test artifacts
+/screenshots/
+test-pptx.mjs
+take-readme-screenshots.mjs
