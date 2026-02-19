@@ -6,18 +6,22 @@ interface ToolbarProps {
   projectName: string;
   canUndo: boolean;
   canRedo: boolean;
+  showDependencies: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onFitView: () => void;
+  onToggleDependencies: () => void;
 }
 
 export default function Toolbar({
   projectName,
   canUndo,
   canRedo,
+  showDependencies,
   onUndo,
   onRedo,
   onFitView,
+  onToggleDependencies,
 }: ToolbarProps) {
   const getFlowElement = () =>
     document.querySelector(".react-flow__viewport") as HTMLElement | null;
@@ -95,6 +99,20 @@ export default function Toolbar({
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
         </svg>
+      </button>
+
+      <div className="w-px h-6 bg-zinc-700 mx-1" />
+
+      <button
+        onClick={onToggleDependencies}
+        className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${
+          showDependencies
+            ? "bg-blue-600/30 text-blue-300 border border-blue-500/40"
+            : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700"
+        }`}
+        title="Vis/skjul afhængighedslabels"
+      >
+        Afh.
       </button>
 
       <div className="w-px h-6 bg-zinc-700 mx-1" />

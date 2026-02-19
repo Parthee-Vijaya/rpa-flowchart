@@ -14,6 +14,7 @@ import {
   type Node,
   type Edge,
   Panel,
+  MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { v4 as uuid } from "uuid";
@@ -58,6 +59,102 @@ interface SectionRenderData {
   height: number;
 }
 
+function enhanceFlowReadability(
+  inputNodes: RpaNode[],
+  inputEdges: RpaEdge[]
+): { nodes: RpaNode[]; edges: RpaEdge[] } {
+  const order = getFlowOrder(inputNodes, inputEdges);
+  let stepCounter = 1;
+
+  const nodes = inputNodes.map((node) => {
+    if (node.type === "start_end") return { ...node };
+    const existing = node.data.stepNumber?.trim();
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        stepNumber: existing || `${stepCounter++}`,
+      },
+    };
+  });
+
+  // Ensure numbering follows detected process order.
+  const stepByNode = new Map<string, string>();
+  stepCounter = 1;
+  for (const nodeId of order) {
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node || node.type === "start_end") continue;
+    if (!node.data.stepNumber) {
+      node.data.stepNumber = `${stepCounter}`;
+    } else if (/^\d+$/.test(node.data.stepNumber)) {
+      node.data.stepNumber = `${stepCounter}`;
+    }
+    stepByNode.set(node.id, node.data.stepNumber || `${stepCounter}`);
+    stepCounter += 1;
+  }
+
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const edges = inputEdges.map((edge) => {
+    const sourceNode = nodeById.get(edge.source);
+    const sourceStep = stepByNode.get(edge.source);
+    const fallbackLabel =
+      sourceNode?.type === "decision"
+        ? edge.label || "Ja / Nej"
+        : sourceStep
+          ? `Afh. af trin ${sourceStep}`
+          : edge.label;
+
+    return {
+      ...edge,
+      type: edge.type || "smoothstep",
+      label: edge.label || fallbackLabel,
+      markerEnd: { type: MarkerType.ArrowClosed },
+      labelStyle: { fill: "#cbd5e1", fontSize: 10, fontWeight: 600 },
+      labelBgStyle: { fill: "#09090b", fillOpacity: 0.92, stroke: "#3f3f46", strokeWidth: 1 },
+      labelBgPadding: [6, 2] as [number, number],
+      labelBgBorderRadius: 6,
+    } as Edge;
+  });
+
+  return { nodes, edges: edges as unknown as RpaEdge[] };
+}
+
+function getFlowOrder(nodes: RpaNode[], edges: RpaEdge[]): string[] {
+  const outgoing = new Map<string, string[]>();
+  const incomingCount = new Map<string, number>();
+
+  for (const node of nodes) {
+    outgoing.set(node.id, []);
+    incomingCount.set(node.id, 0);
+  }
+  for (const edge of edges) {
+    outgoing.get(edge.source)?.push(edge.target);
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
+  }
+
+  const queue = nodes
+    .filter((n) => (incomingCount.get(n.id) || 0) === 0)
+    .map((n) => n.id);
+  const visited = new Set<string>();
+  const order: string[] = [];
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    order.push(id);
+
+    for (const target of outgoing.get(id) || []) {
+      if (!visited.has(target)) queue.push(target);
+    }
+  }
+
+  for (const node of nodes) {
+    if (!visited.has(node.id)) order.push(node.id);
+  }
+  return order;
+}
+
 function FlowchartEditorInner({
   projectId,
   projectName,
@@ -74,6 +171,7 @@ function FlowchartEditorInner({
   const [pptxSlides, setPptxSlides] = useState<ParsedSlide[]>([]);
   const [swimlaneData, setSwimlaneData] = useState<SwimlaneRenderData[]>([]);
   const [sectionData, setSectionData] = useState<SectionRenderData[]>([]);
+  const [showDependencies, setShowDependencies] = useState(true);
 
   const { fitView, screenToFlowPosition } = useReactFlow();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -151,10 +249,70 @@ function FlowchartEditorInner({
   const onConnect = useCallback(
     (params: Connection) => {
       takeSnapshot(nodes, edges);
-      setEdges((eds) => addEdge({ ...params, type: "smoothstep" }, eds));
+      const sourceNode = nodes.find((n) => n.id === params.source);
+      const sourceStep = sourceNode?.data && "stepNumber" in sourceNode.data
+        ? String(sourceNode.data.stepNumber || "")
+        : "";
+      const label =
+        sourceNode?.type === "decision"
+          ? "Ja / Nej"
+          : sourceStep
+            ? `Afh. af trin ${sourceStep}`
+            : undefined;
+
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...params,
+            type: "smoothstep",
+            label,
+            data: { dependencyLabel: label || "" },
+            markerEnd: { type: MarkerType.ArrowClosed },
+            labelStyle: { fill: "#cbd5e1", fontSize: 10, fontWeight: 600 },
+            labelBgStyle: {
+              fill: "#09090b",
+              fillOpacity: 0.92,
+              stroke: "#3f3f46",
+              strokeWidth: 1,
+            },
+            labelBgPadding: [6, 2],
+            labelBgBorderRadius: 6,
+          },
+          eds
+        )
+      );
     },
     [nodes, edges, takeSnapshot, setEdges]
   );
+
+  const applyDependencyVisibility = useCallback(
+    (inputEdges: Edge[], visible: boolean): Edge[] => {
+      return inputEdges.map((edge) => {
+        const data = (edge.data || {}) as Record<string, unknown>;
+        const storedLabel =
+          typeof data.dependencyLabel === "string"
+            ? data.dependencyLabel
+            : typeof edge.label === "string"
+              ? edge.label
+              : "";
+
+        return {
+          ...edge,
+          data: { ...data, dependencyLabel: storedLabel },
+          label: visible ? storedLabel || edge.label : undefined,
+        };
+      });
+    },
+    []
+  );
+
+  const toggleDependencies = useCallback(() => {
+    setShowDependencies((prev) => {
+      const next = !prev;
+      setEdges((eds) => applyDependencyVisibility(eds, next));
+      return next;
+    });
+  }, [applyDependencyVisibility, setEdges]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -221,11 +379,15 @@ function FlowchartEditorInner({
   const onGenerated = useCallback(
     (result: AiGeneratedFlowchart) => {
       takeSnapshot(nodes, edges);
+      const readableFlow = enhanceFlowReadability(
+        result.nodes as RpaNode[],
+        result.edges as RpaEdge[]
+      );
 
       // Apply swimlane layout
       const { nodes: layoutNodes, swimlanes, sections, bounds } = applySwimlaneLayout(
-        result.nodes as RpaNode[],
-        result.edges as RpaEdge[]
+        readableFlow.nodes,
+        readableFlow.edges
       );
 
       const backgrounds = getSwimlaneBackgrounds(swimlanes, bounds.maxY + 180);
@@ -233,10 +395,24 @@ function FlowchartEditorInner({
       setSectionData(sections);
 
       setNodes(layoutNodes as unknown as Node[]);
-      setEdges(result.edges as unknown as Edge[]);
+      setEdges(
+        applyDependencyVisibility(
+          readableFlow.edges as unknown as Edge[],
+          showDependencies
+        )
+      );
       setTimeout(() => fitView({ padding: 0.24 }), 150);
     },
-    [nodes, edges, takeSnapshot, setNodes, setEdges, fitView]
+    [
+      nodes,
+      edges,
+      takeSnapshot,
+      setNodes,
+      setEdges,
+      fitView,
+      applyDependencyVisibility,
+      showDependencies,
+    ]
   );
 
   const handlePptxImport = useCallback(
@@ -393,9 +569,11 @@ function FlowchartEditorInner({
                 projectName={projectName}
                 canUndo={canUndo}
                 canRedo={canRedo}
+                showDependencies={showDependencies}
                 onUndo={() => undo(nodes, edges, setNodes, setEdges)}
                 onRedo={() => redo(nodes, edges, setNodes, setEdges)}
                 onFitView={() => fitView({ padding: 0.24 })}
+                onToggleDependencies={toggleDependencies}
               />
             </div>
           </Panel>

@@ -208,17 +208,30 @@ function deriveSectionTitle(nodes: RpaNode[], fallbackIndex: number): string {
     .map((n) => `${n.data.label || ""} ${n.data.description || ""}`.trim())
     .filter(Boolean);
 
-  if (candidates.length === 0) return `Procesdel ${fallbackIndex}`;
+  const stepNumbers = nodes
+    .map((n) => n.data.stepNumber?.trim() || "")
+    .filter((s) => /^\d+$/.test(s))
+    .map((s) => parseInt(s, 10))
+    .sort((a, b) => a - b);
+
+  const stepPrefix =
+    stepNumbers.length > 1
+      ? `Trin ${stepNumbers[0]}-${stepNumbers[stepNumbers.length - 1]}: `
+      : stepNumbers.length === 1
+        ? `Trin ${stepNumbers[0]}: `
+        : "";
+
+  if (candidates.length === 0) return `${stepPrefix}Procesdel ${fallbackIndex}`.trim();
 
   const first = candidates[0]
     .replace(/\s+/g, " ")
     .replace(/[.:;,]+$/g, "")
     .trim();
-  if (first.length <= 46) return first;
+  if (first.length <= 46) return `${stepPrefix}${first}`.trim();
 
   const words = first.split(" ");
   const shortened = words.slice(0, 6).join(" ");
-  return `${shortened}...`;
+  return `${stepPrefix}${shortened}...`.trim();
 }
 
 function getAppFromType(node: RpaNode): string {

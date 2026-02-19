@@ -11,6 +11,7 @@ Bygget til RPA-teams der dokumenterer forretningsprocesser - upload en beskrivel
 - **AI-generering** - Generer komplette flowcharts fra tekst og/eller screenshots med Claude, Google Gemini eller Azure OpenAI
 - **PowerPoint-import** - Upload en eksisterende .pptx-fil og faa automatisk udtrukket tekst + billeder fra alle slides
 - **PDF-import** - Upload PDF-dokumenter og brug udtrukket tekst som grundlag for AI-generering
+- **MHT-import** - Upload .mht/.mhtml filer og udtraek procesrelevant tekst automatisk
 - **Swimlane-layout** - Noder grupperes automatisk i swimlanes efter applikation (fx Outlook, DUBU, SAPA)
 - **6 RPA-specifikke nodetyper** - Procestrin, beslutning, applikationsskift, datainput, bloker og start/slut
 - **Drag & drop editor** - Traek noder, opret forbindelser, rediger tekst direkte i browseren
@@ -91,6 +92,7 @@ Aabn [http://localhost:3000](http://localhost:3000) i din browser.
    - Upload screenshots (PNG/JPG)
    - Upload en PowerPoint-fil (.pptx) - tekst og billeder udtraekkes automatisk
    - Upload en PDF-fil (.pdf) - tekst udtraekkes automatisk
+   - Upload en MHT-fil (.mht/.mhtml) - tekst udtraekkes automatisk
 3. **Generer** - Klik "Generer flowchart med AI"
 4. **Rediger** - Traek noder, rediger tekst, tilfoej nye noder fra paletten
 5. **Eksporter** - Klik PNG eller PDF i toolbaren

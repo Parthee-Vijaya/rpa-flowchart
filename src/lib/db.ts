@@ -42,6 +42,21 @@ function initSchema() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS video_jobs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      original_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      progress INTEGER NOT NULL DEFAULT 0,
+      current_step TEXT,
+      error TEXT,
+      transcript_text TEXT,
+      visual_text TEXT,
+      combined_text TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 }
 
@@ -136,6 +151,108 @@ export function getProjectFiles(projectId: string) {
   return getDb()
     .prepare("SELECT * FROM uploaded_files WHERE project_id = ? ORDER BY slide_number, created_at")
     .all(projectId);
+}
+
+// --- Video Jobs ---
+
+export interface VideoJobRow {
+  id: string;
+  project_id: string;
+  original_name: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress: number;
+  current_step: string | null;
+  error: string | null;
+  transcript_text: string | null;
+  visual_text: string | null;
+  combined_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createVideoJob(job: {
+  id: string;
+  projectId: string;
+  originalName: string;
+}) {
+  getDb()
+    .prepare(
+      `INSERT INTO video_jobs (id, project_id, original_name, status, progress, current_step)
+       VALUES (?, ?, ?, 'queued', 0, 'Venter i ko')`
+    )
+    .run(job.id, job.projectId, job.originalName);
+}
+
+export function updateVideoJobProgress(
+  id: string,
+  update: {
+    status?: VideoJobRow["status"];
+    progress?: number;
+    currentStep?: string;
+    error?: string | null;
+  }
+) {
+  getDb()
+    .prepare(
+      `UPDATE video_jobs
+       SET status = COALESCE(?, status),
+           progress = COALESCE(?, progress),
+           current_step = COALESCE(?, current_step),
+           error = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    )
+    .run(
+      update.status ?? null,
+      update.progress ?? null,
+      update.currentStep ?? null,
+      update.error ?? null,
+      id
+    );
+}
+
+export function completeVideoJob(
+  id: string,
+  payload: {
+    transcriptText: string;
+    visualText: string;
+    combinedText: string;
+  }
+) {
+  getDb()
+    .prepare(
+      `UPDATE video_jobs
+       SET status = 'completed',
+           progress = 100,
+           current_step = 'Faerdig',
+           error = NULL,
+           transcript_text = ?,
+           visual_text = ?,
+           combined_text = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    )
+    .run(payload.transcriptText, payload.visualText, payload.combinedText, id);
+}
+
+export function failVideoJob(id: string, errorMessage: string) {
+  getDb()
+    .prepare(
+      `UPDATE video_jobs
+       SET status = 'failed',
+           progress = 100,
+           current_step = 'Fejlet',
+           error = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    )
+    .run(errorMessage, id);
+}
+
+export function getVideoJobById(id: string): VideoJobRow | undefined {
+  return getDb()
+    .prepare("SELECT * FROM video_jobs WHERE id = ?")
+    .get(id) as VideoJobRow | undefined;
 }
 
 // --- Settings ---

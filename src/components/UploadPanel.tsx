@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 interface UploadPanelProps {
   projectId: string;
@@ -7,6 +7,16 @@ interface UploadPanelProps {
   onPptxImported: (slides: Array<{ slideNumber: number; title: string; textContent: string; images: Array<{ filename: string; data: string; contentType: string }> }>) => void;
   onTextChange: (text: string) => void;
   text: string;
+}
+
+interface VideoJobStatus {
+  id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress: number;
+  currentStep: string;
+  error?: string | null;
+  combinedText?: string;
+  originalName?: string;
 }
 
 export default function UploadPanel({
@@ -20,10 +30,18 @@ export default function UploadPanel({
   const [uploadedCount, setUploadedCount] = useState(0);
   const [pptxLoading, setPptxLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [mhtLoading, setMhtLoading] = useState(false);
   const [pdfImportedInfo, setPdfImportedInfo] = useState<{
     count: number;
     pages: number;
   } | null>(null);
+  const [mhtImportedCount, setMhtImportedCount] = useState(0);
+  const [videoJob, setVideoJob] = useState<VideoJobStatus | null>(null);
+  const textRef = useRef(text);
+
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -48,6 +66,18 @@ export default function UploadPanel({
     );
     const pdfFiles = files.filter(
       (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
+    );
+    const mhtFiles = files.filter((f) => {
+      const name = f.name.toLowerCase();
+      return (
+        name.endsWith(".mht") ||
+        name.endsWith(".mhtml") ||
+        f.type === "message/rfc822" ||
+        f.type === "multipart/related"
+      );
+    });
+    const videoFiles = files.filter(
+      (f) => f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v|avi)$/i.test(f.name)
     );
     const imageFiles = files.filter((f) => f.type.startsWith("image/"));
 
@@ -151,6 +181,127 @@ export default function UploadPanel({
         setPdfLoading(false);
       }
     }
+
+    if (videoFiles.length > 0) {
+      await importVideo(videoFiles[0]);
+    }
+
+    if (mhtFiles.length > 0) {
+      setMhtLoading(true);
+      try {
+        const mhtTextBlocks: string[] = [];
+        for (const file of mhtFiles) {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("projectId", projectId);
+
+          const res = await fetch("/api/import-mht", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "MHT-import fejlede");
+          }
+
+          const extractedText =
+            typeof data.textContent === "string" ? data.textContent.trim() : "";
+          if (extractedText) {
+            const title = typeof data.title === "string" && data.title.trim()
+              ? data.title.trim()
+              : file.name;
+            mhtTextBlocks.push(`[MHT: ${title}]\n${extractedText}`);
+          }
+        }
+
+        if (mhtTextBlocks.length > 0) {
+          const nextText = [textRef.current.trim(), ...mhtTextBlocks]
+            .filter(Boolean)
+            .join("\n\n");
+          onTextChange(nextText);
+          setMhtImportedCount((count) => count + mhtTextBlocks.length);
+        }
+      } catch (err) {
+        console.error("MHT import fejl:", err);
+      } finally {
+        setMhtLoading(false);
+      }
+    }
+  };
+
+  const importVideo = async (file: File) => {
+    setVideoJob({
+      id: "",
+      status: "processing",
+      progress: 2,
+      currentStep: "Uploader video...",
+      originalName: file.name,
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("projectId", projectId);
+
+      const res = await fetch("/api/import-video", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Video-import fejlede");
+      }
+
+      await pollVideoJob(data.jobId, file.name);
+    } catch (error) {
+      setVideoJob({
+        id: "",
+        status: "failed",
+        progress: 100,
+        currentStep: "Videoanalyse fejlede",
+        error: error instanceof Error ? error.message : "Ukendt fejl",
+        originalName: file.name,
+      });
+    }
+  };
+
+  const pollVideoJob = async (jobId: string, fileName: string) => {
+    let done = false;
+    while (!done) {
+      const response = await fetch(`/api/video-jobs/${jobId}`, { cache: "no-store" });
+      const data = (await response.json()) as VideoJobStatus;
+
+      if (!response.ok) {
+        throw new Error((data as { error?: string }).error || "Kunne ikke hente video-job status");
+      }
+
+      const nextState: VideoJobStatus = {
+        id: data.id,
+        status: data.status,
+        progress: data.progress,
+        currentStep: data.currentStep || "",
+        error: data.error,
+        combinedText: data.combinedText,
+        originalName: data.originalName || fileName,
+      };
+      setVideoJob(nextState);
+
+      if (data.status === "completed") {
+        const extracted = (data.combinedText || "").trim();
+        if (extracted) {
+          const nextText = [textRef.current.trim(), `[VIDEO: ${fileName}]\n${extracted}`]
+            .filter(Boolean)
+            .join("\n\n");
+          onTextChange(nextText);
+        }
+        done = true;
+      } else if (data.status === "failed") {
+        done = true;
+      } else {
+        await sleep(1200);
+      }
+    }
   };
 
   return (
@@ -170,7 +321,7 @@ export default function UploadPanel({
 
       <div>
         <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-          Screenshots / PowerPoint / PDF
+          Screenshots / PowerPoint / PDF / Video
         </label>
         <div
           onDragOver={(e) => {
@@ -186,7 +337,7 @@ export default function UploadPanel({
           }}
           className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center transition-colors"
         >
-          {uploading || pptxLoading || pdfLoading ? (
+          {uploading || pptxLoading || pdfLoading || mhtLoading || (videoJob?.status === "processing") ? (
             <div className="text-blue-400 text-sm">
               <svg
                 className="animate-spin h-6 w-6 mx-auto mb-2"
@@ -211,6 +362,10 @@ export default function UploadPanel({
                 ? "Importerer PowerPoint..."
                 : pdfLoading
                   ? "Importerer PDF..."
+                  : mhtLoading
+                    ? "Importerer MHT..."
+                  : videoJob?.status === "processing"
+                    ? videoJob.currentStep || "Analyserer video..."
                   : "Uploader..."}
             </div>
           ) : (
@@ -235,14 +390,14 @@ export default function UploadPanel({
                   <input
                     type="file"
                     multiple
-                    accept="image/*,.pptx,.pdf"
+                    accept="image/*,.pptx,.pdf,.mht,.mhtml,video/*"
                     onChange={handleFileInput}
                     className="hidden"
                   />
                 </label>
               </p>
               <p className="text-xs text-zinc-500">
-                PNG, JPG, PPTX, PDF - max 50 MB
+                PNG, JPG, PPTX, PDF, MHT, MP4/WebM - max 50 MB (video: max 20 MB)
               </p>
             </>
           )}
@@ -258,9 +413,51 @@ export default function UploadPanel({
             {pdfImportedInfo.count} PDF-fil(er) importeret ({pdfImportedInfo.pages} sider)
           </p>
         )}
+        {mhtImportedCount > 0 && (
+          <p className="text-xs text-green-400 mt-1">
+            {mhtImportedCount} MHT-fil(er) importeret
+          </p>
+        )}
+        {videoJob && (
+          <div className="mt-2 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
+            <div className="flex items-center justify-between text-xs mb-1.5">
+              <span className="text-zinc-300 truncate pr-3">
+                Video: {videoJob.originalName || "upload"}
+              </span>
+              <span
+                className={
+                  videoJob.status === "completed"
+                    ? "text-green-400"
+                    : videoJob.status === "failed"
+                      ? "text-red-400"
+                      : "text-blue-400"
+                }
+              >
+                {videoJob.progress}%
+              </span>
+            </div>
+            <div className="h-2 w-full rounded bg-zinc-800 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  videoJob.status === "failed" ? "bg-red-500" : "bg-blue-500"
+                }`}
+                style={{ width: `${Math.max(0, Math.min(100, videoJob.progress))}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-1.5">
+              {videoJob.status === "failed"
+                ? videoJob.error || "Videoanalyse fejlede"
+                : videoJob.currentStep || "Analyserer video"}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fileToBase64(file: File): Promise<string> {
