@@ -1,11 +1,12 @@
 import type { RpaNode, RpaEdge } from "./types";
 
-const SWIMLANE_WIDTH = 350;
-const SWIMLANE_GAP = 50;
-const NODE_VERTICAL_SPACING = 95;
-const HEADER_HEIGHT = 60;
-const PADDING_X = 60;
-const PADDING_Y = 20;
+const SWIMLANE_WIDTH = 560;
+const SWIMLANE_GAP = 95;
+const NODE_VERTICAL_SPACING = 155;
+const GROUP_VERTICAL_GAP = 120;
+const HEADER_HEIGHT = 64;
+const PADDING_X = 70;
+const PADDING_Y = 30;
 
 interface SwimlaneInfo {
   application: string;
@@ -14,17 +15,34 @@ interface SwimlaneInfo {
   nodes: RpaNode[];
 }
 
+export interface SectionInfo {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export function applySwimlaneLayout(
   nodes: RpaNode[],
   edges: RpaEdge[]
-): { nodes: RpaNode[]; swimlanes: SwimlaneInfo[] } {
-  if (nodes.length === 0) return { nodes, swimlanes: [] };
+): {
+  nodes: RpaNode[];
+  swimlanes: SwimlaneInfo[];
+  sections: SectionInfo[];
+  bounds: { maxX: number; maxY: number };
+} {
+  if (nodes.length === 0) {
+    return { nodes, swimlanes: [], sections: [], bounds: { maxX: 0, maxY: 0 } };
+  }
 
   // 1. Determine execution order from edges
   const ordered = getExecutionOrder(nodes, edges);
 
   // 2. Group consecutive nodes by application
   const groups = groupByApplication(ordered);
+  const sections = buildSections(ordered);
 
   // 3. Assign swimlane columns (unique apps get their own column)
   const appOrder: string[] = [];
@@ -46,8 +64,7 @@ export function applySwimlaneLayout(
     swimlaneMap.set(sl.application, sl);
   }
 
-  // 4. Position nodes within swimlanes
-  // Each swimlane manages its own Y position independently
+  // 4. Position nodes within each vertical swimlane
   const swimlaneY = new Map<string, number>();
   for (const app of appOrder) {
     swimlaneY.set(app, HEADER_HEIGHT + PADDING_Y);
@@ -72,12 +89,43 @@ export function applySwimlaneLayout(
       sl.nodes.push(node);
     }
 
-    const endY =
-      currentY + group.nodes.length * NODE_VERTICAL_SPACING;
-    swimlaneY.set(group.app, endY);
+    const endY = currentY + group.nodes.length * NODE_VERTICAL_SPACING;
+    swimlaneY.set(group.app, endY + GROUP_VERTICAL_GAP);
   }
 
-  return { nodes: repositionedNodes, swimlanes };
+  const positionedById = new Map(repositionedNodes.map((n) => [n.id, n]));
+  const groupedSections: SectionInfo[] = sections
+    .map((section, index) => {
+      const positioned = section.nodes
+        .map((n) => positionedById.get(n.id))
+        .filter((n): n is RpaNode => Boolean(n));
+      if (positioned.length === 0) return null;
+
+      const minX = Math.min(...positioned.map((n) => n.position.x));
+      const maxX = Math.max(...positioned.map((n) => n.position.x));
+      const minY = Math.min(...positioned.map((n) => n.position.y));
+      const maxY = Math.max(...positioned.map((n) => n.position.y));
+
+      return {
+        id: `section-${index}`,
+        label: section.label,
+        x: minX - 54,
+        y: minY - 64,
+        width: maxX - minX + 320,
+        height: maxY - minY + 180,
+      };
+    })
+    .filter((s): s is SectionInfo => Boolean(s));
+
+  const maxX = repositionedNodes.reduce((max, n) => Math.max(max, n.position.x), 0);
+  const maxY = repositionedNodes.reduce((max, n) => Math.max(max, n.position.y), 0);
+
+  return {
+    nodes: repositionedNodes,
+    swimlanes,
+    sections: groupedSections,
+    bounds: { maxX, maxY },
+  };
 }
 
 interface NodeGroup {
@@ -106,6 +154,71 @@ function groupByApplication(nodes: RpaNode[]): NodeGroup[] {
   }
 
   return groups;
+}
+
+interface SectionGroup {
+  key: string;
+  label: string;
+  nodes: RpaNode[];
+}
+
+function buildSections(nodes: RpaNode[]): SectionGroup[] {
+  const groups: SectionGroup[] = [];
+  let currentKey = "";
+  let currentGroup: RpaNode[] = [];
+
+  for (const node of nodes) {
+    const key = getSectionKey(node, groups.length + 1);
+    if (key !== currentKey && currentGroup.length > 0) {
+      groups.push({
+        key: currentKey,
+        label: deriveSectionTitle(currentGroup, groups.length + 1),
+        nodes: currentGroup,
+      });
+      currentGroup = [];
+    }
+    currentKey = key;
+    currentGroup.push(node);
+  }
+
+  if (currentGroup.length > 0) {
+    groups.push({
+      key: currentKey || `section-${groups.length + 1}`,
+      label: deriveSectionTitle(currentGroup, groups.length + 1),
+      nodes: currentGroup,
+    });
+  }
+
+  return groups;
+}
+
+function getSectionKey(node: RpaNode, fallbackIndex: number): string {
+  const step = node.data.stepNumber?.trim();
+  if (step) {
+    const major = step.split(".")[0];
+    if (/^\d+$/.test(major)) {
+      return `step-major-${major}`;
+    }
+  }
+  return `section-${fallbackIndex}`;
+}
+
+function deriveSectionTitle(nodes: RpaNode[], fallbackIndex: number): string {
+  const candidates = nodes
+    .map((n) => `${n.data.label || ""} ${n.data.description || ""}`.trim())
+    .filter(Boolean);
+
+  if (candidates.length === 0) return `Procesdel ${fallbackIndex}`;
+
+  const first = candidates[0]
+    .replace(/\s+/g, " ")
+    .replace(/[.:;,]+$/g, "")
+    .trim();
+  if (first.length <= 46) return first;
+
+  const words = first.split(" ");
+  const shortened = words.slice(0, 6).join(" ");
+  return `${shortened}...`;
 }
 
 function getAppFromType(node: RpaNode): string {
@@ -179,7 +292,7 @@ export function getSwimlaneBackgrounds(
     x: sl.x,
     y: 0,
     width: SWIMLANE_WIDTH,
-    height: Math.max(totalHeight + 80, 600),
+    height: Math.max(totalHeight + 110, 760),
   }));
 }
 
@@ -187,6 +300,7 @@ export const SWIMLANE_CONSTANTS = {
   SWIMLANE_WIDTH,
   SWIMLANE_GAP,
   NODE_VERTICAL_SPACING,
+  GROUP_VERTICAL_GAP,
   HEADER_HEIGHT,
   PADDING_X,
   PADDING_Y,

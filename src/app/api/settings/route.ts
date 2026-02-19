@@ -6,6 +6,7 @@ export async function GET() {
     provider: getSetting("ai_provider") || "claude",
     apiKey: getSetting("ai_api_key") || "",
     azureEndpoint: getSetting("ai_azure_endpoint") || "",
+    strictMode: getSetting("ai_strict_mode") === "true",
   });
 }
 
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest) {
   if (body.apiKey) setSetting("ai_api_key", body.apiKey);
   if (body.azureEndpoint !== undefined)
     setSetting("ai_azure_endpoint", body.azureEndpoint);
+  if (body.strictMode !== undefined)
+    setSetting("ai_strict_mode", String(Boolean(body.strictMode)));
 
   return NextResponse.json({ ok: true });
 }

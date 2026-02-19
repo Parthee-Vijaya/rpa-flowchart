@@ -1,13 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AiGeneratedFlowchart } from "../types";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
+import { buildUserMessage, getSystemPrompt } from "./prompt";
 
 const MODEL_NAME = "gemini-2.0-flash";
 
 export async function generateWithGemini(
   apiKey: string,
   screenshots: Array<{ base64: string; mediaType: string }>,
-  textDescription: string
+  textDescription: string,
+  strictMode = false
 ): Promise<AiGeneratedFlowchart> {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
@@ -24,10 +25,10 @@ export async function generateWithGemini(
       {
         role: "user",
         parts: [
-          { text: SYSTEM_PROMPT },
+          { text: getSystemPrompt(strictMode) },
           ...imageParts,
           {
-            text: buildUserMessage(textDescription, screenshots.length),
+            text: buildUserMessage(textDescription, screenshots.length, strictMode),
           },
         ],
       },

@@ -27,7 +27,11 @@ import SettingsPanel from "./SettingsPanel";
 import ColorLegend from "./ColorLegend";
 import SwimlaneBackgrounds from "./SwimlaneBackgrounds";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
-import { applySwimlaneLayout, getSwimlaneBackgrounds } from "@/lib/layout";
+import {
+  applySwimlaneLayout,
+  getSwimlaneBackgrounds,
+  SWIMLANE_CONSTANTS,
+} from "@/lib/layout";
 import type { AiGeneratedFlowchart, ParsedSlide, RpaNode, RpaEdge } from "@/lib/types";
 
 interface FlowchartEditorProps {
@@ -35,6 +39,23 @@ interface FlowchartEditorProps {
   projectName: string;
   initialNodes: Node[];
   initialEdges: Edge[];
+}
+
+interface SwimlaneRenderData {
+  application: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface SectionRenderData {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 function FlowchartEditorInner({
@@ -51,9 +72,8 @@ function FlowchartEditorInner({
   const [text, setText] = useState("");
   const [screenshots, setScreenshots] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
   const [pptxSlides, setPptxSlides] = useState<ParsedSlide[]>([]);
-  const [swimlaneData, setSwimlaneData] = useState<
-    Array<{ application: string; x: number; y: number; width: number; height: number }>
-  >([]);
+  const [swimlaneData, setSwimlaneData] = useState<SwimlaneRenderData[]>([]);
+  const [sectionData, setSectionData] = useState<SectionRenderData[]>([]);
 
   const { fitView, screenToFlowPosition } = useReactFlow();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -66,7 +86,7 @@ function FlowchartEditorInner({
   const swimlaneBackgrounds = useMemo(() => {
     if (swimlaneData.length > 0) return swimlaneData;
 
-    // Try to compute from existing nodes if they have applications
+    // Fallback for existing data without regenerated layout
     const apps = new Map<string, { minY: number; maxY: number; x: number }>();
     for (const node of nodes) {
       const data = node.data as Record<string, string>;
@@ -90,10 +110,10 @@ function FlowchartEditorInner({
 
     return Array.from(apps.entries()).map(([app, info]) => ({
       application: app,
-      x: info.x - 60,
-      y: info.minY - 60,
-      width: 350,
-      height: info.maxY - info.minY + 180,
+      x: info.x - SWIMLANE_CONSTANTS.PADDING_X,
+      y: info.minY - 70,
+      width: SWIMLANE_CONSTANTS.SWIMLANE_WIDTH,
+      height: info.maxY - info.minY + 230,
     }));
   }, [nodes, swimlaneData]);
 
@@ -203,22 +223,18 @@ function FlowchartEditorInner({
       takeSnapshot(nodes, edges);
 
       // Apply swimlane layout
-      const { nodes: layoutNodes, swimlanes } = applySwimlaneLayout(
+      const { nodes: layoutNodes, swimlanes, sections, bounds } = applySwimlaneLayout(
         result.nodes as RpaNode[],
         result.edges as RpaEdge[]
       );
 
-      // Calculate max Y for swimlane backgrounds
-      const maxY = layoutNodes.reduce(
-        (max, n) => Math.max(max, n.position.y),
-        0
-      );
-      const backgrounds = getSwimlaneBackgrounds(swimlanes, maxY + 150);
+      const backgrounds = getSwimlaneBackgrounds(swimlanes, bounds.maxY + 180);
       setSwimlaneData(backgrounds);
+      setSectionData(sections);
 
       setNodes(layoutNodes as unknown as Node[]);
       setEdges(result.edges as unknown as Edge[]);
-      setTimeout(() => fitView({ padding: 0.15 }), 150);
+      setTimeout(() => fitView({ padding: 0.24 }), 150);
     },
     [nodes, edges, takeSnapshot, setNodes, setEdges, fitView]
   );
@@ -364,7 +380,7 @@ function FlowchartEditorInner({
           proOptions={{ hideAttribution: true }}
         >
           <Background color="#27272a" gap={20} />
-          <SwimlaneBackgrounds swimlanes={swimlaneBackgrounds} />
+          <SwimlaneBackgrounds swimlanes={swimlaneBackgrounds} sections={sectionData} />
           <Controls className="bg-zinc-900 border border-zinc-700" />
           <MiniMap
             className="bg-zinc-900 border border-zinc-700"
@@ -379,7 +395,7 @@ function FlowchartEditorInner({
                 canRedo={canRedo}
                 onUndo={() => undo(nodes, edges, setNodes, setEdges)}
                 onRedo={() => redo(nodes, edges, setNodes, setEdges)}
-                onFitView={() => fitView({ padding: 0.15 })}
+                onFitView={() => fitView({ padding: 0.24 })}
               />
             </div>
           </Panel>

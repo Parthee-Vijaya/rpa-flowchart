@@ -1,13 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AiGeneratedFlowchart } from "../types";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
+import { buildUserMessage, getSystemPrompt } from "./prompt";
 
 const MODEL_NAME = "claude-sonnet-4-5-20250929";
 
 export async function generateWithClaude(
   apiKey: string,
   screenshots: Array<{ base64: string; mediaType: string }>,
-  textDescription: string
+  textDescription: string,
+  strictMode = false
 ): Promise<AiGeneratedFlowchart> {
   const client = new Anthropic({ apiKey });
 
@@ -34,7 +35,7 @@ export async function generateWithClaude(
   const response = await client.messages.create({
     model: MODEL_NAME,
     max_tokens: 8000,
-    system: SYSTEM_PROMPT,
+    system: getSystemPrompt(strictMode),
     messages: [
       {
         role: "user",
@@ -42,7 +43,7 @@ export async function generateWithClaude(
           ...imageContent,
           {
             type: "text",
-            text: buildUserMessage(textDescription, screenshots.length),
+            text: buildUserMessage(textDescription, screenshots.length, strictMode),
           },
         ],
       },

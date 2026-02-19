@@ -65,6 +65,7 @@ export interface AiSettings {
   provider: AiProvider;
   apiKey: string;
   azureEndpoint?: string;
+  strictMode?: boolean;
 }
 
 export interface UploadedFile {

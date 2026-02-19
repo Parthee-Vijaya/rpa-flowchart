@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
   const provider = (getSetting("ai_provider") || "claude") as AiProvider;
   const apiKey = getSetting("ai_api_key");
   const azureEndpoint = getSetting("ai_azure_endpoint") || null;
+  const strictMode = getSetting("ai_strict_mode") === "true";
 
   // Fallback to env variable
   const effectiveKey = apiKey || process.env.ANTHROPIC_API_KEY;
@@ -28,7 +29,8 @@ export async function POST(req: NextRequest) {
       effectiveKey,
       azureEndpoint,
       screenshots || [],
-      textDescription || ""
+      textDescription || "",
+      strictMode
     );
 
     return NextResponse.json(result);

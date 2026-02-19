@@ -8,11 +8,12 @@ export async function generateFlowchart(
   apiKey: string,
   azureEndpoint: string | null,
   screenshots: Array<{ base64: string; mediaType: string }>,
-  textDescription: string
+  textDescription: string,
+  strictMode = false
 ): Promise<AiGeneratedFlowchart> {
   switch (provider) {
     case "claude":
-      return generateWithClaude(apiKey, screenshots, textDescription);
+      return generateWithClaude(apiKey, screenshots, textDescription, strictMode);
     case "azure-openai":
       if (!azureEndpoint) {
         throw new Error("Azure endpoint er paakraevet for Azure OpenAI");
@@ -21,10 +22,11 @@ export async function generateFlowchart(
         apiKey,
         azureEndpoint,
         screenshots,
-        textDescription
+        textDescription,
+        strictMode
       );
     case "gemini":
-      return generateWithGemini(apiKey, screenshots, textDescription);
+      return generateWithGemini(apiKey, screenshots, textDescription, strictMode);
     default:
       throw new Error(`Ukendt AI-provider: ${provider}`);
   }

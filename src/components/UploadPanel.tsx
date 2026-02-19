@@ -19,6 +19,11 @@ export default function UploadPanel({
   const [uploading, setUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
   const [pptxLoading, setPptxLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfImportedInfo, setPdfImportedInfo] = useState<{
+    count: number;
+    pages: number;
+  } | null>(null);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -40,6 +45,9 @@ export default function UploadPanel({
         f.name.endsWith(".pptx") ||
         f.type ===
           "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    );
+    const pdfFiles = files.filter(
+      (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
     );
     const imageFiles = files.filter((f) => f.type.startsWith("image/"));
 
@@ -94,6 +102,55 @@ export default function UploadPanel({
         setUploading(false);
       }
     }
+
+    if (pdfFiles.length > 0) {
+      setPdfLoading(true);
+      try {
+        const pdfTextBlocks: string[] = [];
+        let totalPages = 0;
+
+        for (const file of pdfFiles) {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("projectId", projectId);
+
+          const res = await fetch("/api/import-pdf", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "PDF-import fejlede");
+          }
+
+          const extractedText =
+            typeof data.textContent === "string" ? data.textContent.trim() : "";
+
+          if (extractedText) {
+            const titlePart = file.name ? `${file.name}` : "PDF";
+            pdfTextBlocks.push(`[PDF: ${titlePart}]\n${extractedText}`);
+          }
+
+          if (typeof data.pageCount === "number") {
+            totalPages += data.pageCount;
+          }
+        }
+
+        if (pdfTextBlocks.length > 0) {
+          const nextText = [text.trim(), ...pdfTextBlocks]
+            .filter(Boolean)
+            .join("\n\n");
+          onTextChange(nextText);
+        }
+
+        setPdfImportedInfo({ count: pdfFiles.length, pages: totalPages });
+      } catch (err) {
+        console.error("PDF import fejl:", err);
+      } finally {
+        setPdfLoading(false);
+      }
+    }
   };
 
   return (
@@ -113,7 +170,7 @@ export default function UploadPanel({
 
       <div>
         <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-          Screenshots / PowerPoint
+          Screenshots / PowerPoint / PDF
         </label>
         <div
           onDragOver={(e) => {
@@ -129,7 +186,7 @@ export default function UploadPanel({
           }}
           className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center transition-colors"
         >
-          {uploading || pptxLoading ? (
+          {uploading || pptxLoading || pdfLoading ? (
             <div className="text-blue-400 text-sm">
               <svg
                 className="animate-spin h-6 w-6 mx-auto mb-2"
@@ -150,7 +207,11 @@ export default function UploadPanel({
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                 />
               </svg>
-              {pptxLoading ? "Importerer PowerPoint..." : "Uploader..."}
+              {pptxLoading
+                ? "Importerer PowerPoint..."
+                : pdfLoading
+                  ? "Importerer PDF..."
+                  : "Uploader..."}
             </div>
           ) : (
             <>
@@ -174,14 +235,14 @@ export default function UploadPanel({
                   <input
                     type="file"
                     multiple
-                    accept="image/*,.pptx"
+                    accept="image/*,.pptx,.pdf"
                     onChange={handleFileInput}
                     className="hidden"
                   />
                 </label>
               </p>
               <p className="text-xs text-zinc-500">
-                PNG, JPG, PPTX - max 50 MB
+                PNG, JPG, PPTX, PDF - max 50 MB
               </p>
             </>
           )}
@@ -190,6 +251,11 @@ export default function UploadPanel({
         {uploadedCount > 0 && (
           <p className="text-xs text-green-400 mt-2">
             {uploadedCount} billede(r) uploadet
+          </p>
+        )}
+        {pdfImportedInfo && (
+          <p className="text-xs text-green-400 mt-1">
+            {pdfImportedInfo.count} PDF-fil(er) importeret ({pdfImportedInfo.pages} sider)
           </p>
         )}
       </div>

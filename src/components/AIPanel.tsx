@@ -15,6 +15,27 @@ const providerLabels: Record<string, string> = {
   gemini: "Google Gemini",
 };
 
+const PRICE_PER_1M_TOKENS_USD: Record<string, { input: number; output: number }> = {
+  // Estimated list prices in USD per 1M tokens.
+  // Actual price can vary by region, account tier and provider updates.
+  "gemini:gemini-2.0-flash": { input: 0.1, output: 0.4 },
+  "claude:claude-sonnet-4-5-20250929": { input: 3.0, output: 15.0 },
+  "azure-openai:gpt-4o": { input: 2.5, output: 10.0 },
+};
+
+const USD_TO_DKK_RATE = 6.95;
+
+function estimateCostDkk(usage: AiUsageInfo): number | null {
+  const key = `${usage.provider}:${usage.model}`;
+  const price = PRICE_PER_1M_TOKENS_USD[key];
+  if (!price) return null;
+
+  const inputCost = (usage.inputTokens / 1_000_000) * price.input;
+  const outputCost = (usage.outputTokens / 1_000_000) * price.output;
+  const usdCost = inputCost + outputCost;
+  return usdCost * USD_TO_DKK_RATE;
+}
+
 export default function AIPanel({
   projectId,
   screenshots,
@@ -135,6 +156,28 @@ export default function AIPanel({
               {usage.model}
             </span>
           </div>
+          <div className="grid grid-cols-2 gap-2 text-center">
+            <div className="bg-zinc-900/60 rounded-md py-1.5 px-2">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Tid</p>
+              <p className="text-xs font-mono text-zinc-300">
+                {elapsed !== null ? `${elapsed}s` : "-"}
+              </p>
+            </div>
+            <div className="bg-zinc-900/60 rounded-md py-1.5 px-2">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Est. pris (DKK)</p>
+              <p className="text-xs font-mono text-emerald-400 font-semibold">
+                {(() => {
+                  const cost = estimateCostDkk(usage);
+                  return cost !== null
+                    ? `${cost.toLocaleString("da-DK", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} kr.`
+                    : "Ukendt";
+                })()}
+              </p>
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-2 text-center">
             <div>
               <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Input</p>
@@ -155,11 +198,9 @@ export default function AIPanel({
               </p>
             </div>
           </div>
-          {elapsed !== null && (
-            <p className="text-[10px] text-zinc-500 text-center">
-              Genereret paa {elapsed}s
-            </p>
-          )}
+          <p className="text-[10px] text-zinc-500 text-center">
+            Pris er et estimat baseret paa tokenforbrug (USD-&gt;DKK kurs: {USD_TO_DKK_RATE}).
+          </p>
         </div>
       )}
     </div>

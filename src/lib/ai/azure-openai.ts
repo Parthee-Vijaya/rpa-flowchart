@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { AiGeneratedFlowchart } from "../types";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
+import { buildUserMessage, getSystemPrompt } from "./prompt";
 
 const MODEL_NAME = "gpt-4o";
 
@@ -8,7 +8,8 @@ export async function generateWithAzure(
   apiKey: string,
   endpoint: string,
   screenshots: Array<{ base64: string; mediaType: string }>,
-  textDescription: string
+  textDescription: string,
+  strictMode = false
 ): Promise<AiGeneratedFlowchart> {
   const client = new OpenAI({
     apiKey,
@@ -31,14 +32,14 @@ export async function generateWithAzure(
     model: MODEL_NAME,
     max_tokens: 8000,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: getSystemPrompt(strictMode) },
       {
         role: "user",
         content: [
           ...imageContent,
           {
             type: "text",
-            text: buildUserMessage(textDescription, screenshots.length),
+            text: buildUserMessage(textDescription, screenshots.length, strictMode),
           },
         ],
       },

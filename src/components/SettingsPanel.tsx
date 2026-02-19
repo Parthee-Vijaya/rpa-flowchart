@@ -11,6 +11,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [provider, setProvider] = useState<AiProvider>("claude");
   const [apiKey, setApiKey] = useState("");
   const [azureEndpoint, setAzureEndpoint] = useState("");
+  const [strictMode, setStrictMode] = useState(false);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
@@ -21,6 +22,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
           if (data.provider) setProvider(data.provider);
           if (data.apiKey) setApiKey(data.apiKey);
           if (data.azureEndpoint) setAzureEndpoint(data.azureEndpoint);
+          if (typeof data.strictMode === "boolean") setStrictMode(data.strictMode);
         })
         .catch(() => {});
     }
@@ -32,7 +34,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey, azureEndpoint }),
+        body: JSON.stringify({ provider, apiKey, azureEndpoint, strictMode }),
       });
       setStatus("saved");
       setTimeout(() => setStatus("idle"), 2000);
@@ -103,6 +105,23 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               />
             </div>
           )}
+
+          <div className="rounded-lg border border-zinc-700 bg-zinc-800/60 p-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={strictMode}
+                onChange={(e) => setStrictMode(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500 focus:ring-blue-500"
+              />
+              <span className="text-sm text-zinc-200">
+                Strict mode (hoej praecision)
+                <span className="block text-xs text-zinc-400 mt-0.5">
+                  Mere konsistent, implementerbart output med blocker ved uklarheder.
+                </span>
+              </span>
+            </label>
+          </div>
 
           <button
             onClick={save}
